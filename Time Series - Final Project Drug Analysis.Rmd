@@ -1,0 +1,400 @@
+---
+title: "Time Series - Final Project - Drug Analysis"
+author: "Shashank Thakre, Nikhil Shakkarwar, Greg Younkie, Paloma Flores"
+date: "5/1/2021"
+output: 
+  html_document:
+    df_print: paged
+    theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Beer Sales - Drug Store Sales Analysis
+
+Import Libraries
+```{r cache=FALSE, warning=FALSE, results=FALSE, comment=FALSE, message=FALSE}
+library(TSA)
+library(fpp)
+library(tseries)
+library(ggplot2)
+library(forecast)
+library(lubridate)
+library(MTS)
+library(vars)
+```
+
+
+Load the file
+```{r load file}
+dat = read.csv("C:/Users/shash/Documents/MScA/Courses/Spring 2021/Time Series/Project/beer_drug_groupby 2008-2012.csv")
+
+dollars = ts(dat$DOLLARS, start=decimal_date(ymd("2007-12-31")), frequency = 52)
+autoplot(dollars)
+tsdisplay(dollars)
+```
+
+There is a slight trend in the data as the beer sale is increasing with time. However it is not clear from the data would need Box Cox transformation. Let's apply the Box cox transformation to check the lambda value.  
+
+```{r Box Cox}
+# lets find the value of lambda
+lambda <- BoxCox.lambda(dollars)
+lambda
+```
+
+Split in train and test
+```{r split the data}
+train = window(dollars, start=decimal_date(ymd("2007-12-31")), end=decimal_date(ymd("2011-12-25")), frequency = 52)
+test = window(dollars, start=decimal_date(ymd("2011-12-26")), end=decimal_date(ymd("2012-12-30")), frequency = 52)
+
+autoplot(train)
+tsdisplay(train)
+```
+
+Plot ACF and PACF plots
+```{r Plot ACF and PACF}
+Acf(train, 200)
+Pacf(train, 200)
+```
+
+Based on the ACF and PACF plot, there is a trend and seasonality component to the data. Data appears to be model AR = 4 for trend and AR = 1 for seasonality.
+
+Let's run the kpss and adf test to check for stationarity.
+```{r stationary test}
+kpss.test(train)
+adf.test(train)
+```
+
+As per both the KPSS test and ADF test, the data is not trend stationary.  
+
+Let's try to apply differencing to see if we can remove seasonality.
+
+```{r differencing the data}
+tsdisplay(diff(train, 52), main = 'Removing seasonal differencing')
+adf.test(diff(train, 52))
+kpss.test(diff(train, 52))
+```
+Here the KPSS Test is showing that the data is not stationary, however the ADF test is showing that differenced data is stationary. Let's run the auto arima model to get the parameters.  
+
+Run auto arima
+```{r auto arima}
+mod1 = auto.arima(train, seasonal = TRUE)
+summary(mod1)
+checkresiduals(mod1)
+```
+As per the check residuals the model is good fit (high p-value - accept null hypothesis that the model is good fit and the data are independently distributed). The residuals look normally distributed. The model looks good.
+
+Forecast on auto arima model
+```{r forecast}
+forecast_mod1 = forecast(mod1,h=53)
+forecast_mod1
+autoplot(forecast_mod1) + autolayer(test, series = "Test")
+```
+
+
+Let's calculate the accuracy based on the auto arima model  
+```{r accuracy}
+accuracy(forecast_mod1, test)
+```
+
+
+
+
+Different Arima model
+```{r new arima}
+mod2 = Arima(train,order=c(4,1,1), seasonal = list(order=c(1,1,0)))
+summary(mod2)
+```
+
+Forecast on new arima model
+```{r new forecast}
+forecast_mod2 = forecast(mod2,h=53)
+forecast_mod2
+autoplot(forecast_mod2) + autolayer(test, series = "Test")
+```
+
+Accuracy
+```{r new accuracy}
+accuracy(forecast_mod2, test)
+```
+
+
+Let's Run EACF
+```{r eacf}
+eacf(train)
+```
+
+Trying new models
+
+```{r new models}
+mod3 = Arima(train,order=c(1,1,0), seasonal = list(order=c(1,1,1)))
+summary(mod3)
+print("=================")
+
+mod4 = Arima(train,order=c(3,1,1), seasonal = list(order=c(1,1,0)))
+summary(mod4)
+print("=================")
+
+mod5 = Arima(train,order=c(1,1,2), seasonal = list(order=c(0,1,1)))
+summary(mod5)
+print("=================")
+
+mod6 = Arima(train,order=c(2,1,2), seasonal = list(order=c(0,1,1)))
+summary(mod6)
+print("=================")
+
+mod7 = Arima(train,order=c(1,1,4), seasonal = list(order=c(0,1,1)))
+summary(mod7)
+print("=================")
+
+mod8 = Arima(train,order=c(2,1,4), seasonal = list(order=c(0,1,1)))
+summary(mod8)
+print("=================")
+
+mod9 = Arima(train,order=c(4,1,0), seasonal = list(order=c(1,1,0)))
+summary(mod9)
+print("=================")
+
+mod10 = Arima(train,order=c(4,1,4), seasonal = list(order=c(0,1,1)))
+summary(mod10)
+```
+
+
+NEW Arima model --> mod5 since this is the best performing, although not as good as the auto arima
+Forecast on new arima model
+```{r mod5 forecast}
+forecast_mod5 = forecast(mod5,h=53)
+forecast_mod5
+autoplot(forecast_mod5) + autolayer(test, series = "Test")
+```
+
+Accuracy
+```{r mod5 accuracy}
+accuracy(forecast_mod5, test)
+```
+This model is giving worse train RMSE but better Test RMSE. This model is a better fit.
+
+## Regression  
+Let's create time series objects for Units, D and PR  
+
+```{r regression p5}
+units_ts = ts(dat$UNITS, start=decimal_date(ymd("2007-12-31")), frequency = 52)
+D_ts = ts(dat$D, start=decimal_date(ymd("2007-12-31")), frequency = 52)
+PR_ts = ts(dat$PR, start=decimal_date(ymd("2007-12-31")), frequency = 52)
+
+#Split the data into train and test for units, D and PR
+train_units = window(units_ts, start=decimal_date(ymd("2007-12-31")), end=decimal_date(ymd("2011-12-25")), frequency = 52)
+test_units = window(units_ts, start=decimal_date(ymd("2011-12-26")), end=decimal_date(ymd("2012-12-30")), frequency = 52)
+train_D = window(D_ts, start=decimal_date(ymd("2007-12-31")), end=decimal_date(ymd("2011-12-25")), frequency = 52)
+test_D = window(D_ts, start=decimal_date(ymd("2011-12-26")), end=decimal_date(ymd("2012-12-30")), frequency = 52)
+train_PR = window(PR_ts, start=decimal_date(ymd("2007-12-31")), end=decimal_date(ymd("2011-12-25")), frequency = 52)
+test_PR = window(PR_ts, start=decimal_date(ymd("2011-12-26")), end=decimal_date(ymd("2012-12-30")), frequency = 52)
+```
+
+Let's run a simple regression model  
+```{r reg p1}
+mod_tslm = tslm(train ~ train_units+train_D+train_PR)
+summary(mod_tslm)
+checkresiduals(mod_tslm)
+```
+
+Since the p-value of regression is less than 0.05 we accept the null hypothesis that there is significant auto correlation in the time series. We will have next run regression with ARMA errors to remove the autocorrelation and improve our model.
+
+## Regression with ARMA Errors
+We will consider the following variables for regression:  
+* Units   
+* D (Stands for Display)  
+* PR (Stands for Price Reduction)  
+
+Let's plot each variable against the dollar amount
+```{r Regression p1}
+plot(dat$UNITS, dat$DOLLARS)
+plot(dat$D, dat$DOLLARS)
+plot(dat$PR, dat$DOLLARS)
+```
+
+Let's calculate the correlation between Dollars and all three independent variables
+```{r regression p2}
+cor(dat$UNITS, dat$DOLLARS)
+cor(dat$D, dat$DOLLARS)
+cor(dat$PR, dat$DOLLARS)
+```
+
+As can be seen that there is strong correlation between dollars and units but not very strong correlation between dollar and D and PR. Let's apply log transformation to check if that improves the correlation.
+
+```{r regression p3}
+logdat = log(dat)
+plot(logdat$UNITS, logdat$DOLLARS)
+plot(logdat$D, logdat$DOLLARS)
+plot(logdat$PR, logdat$DOLLARS)
+cor(logdat$UNITS, logdat$DOLLARS)
+cor(logdat$D, logdat$DOLLARS)
+cor(logdat$PR, logdat$DOLLARS)
+```
+
+Log transformation is giving worse results. Let's try square transformation  
+
+```{r regression p4}
+sqdat = dat**2
+plot(sqdat$UNITS, sqdat$DOLLARS)
+plot(sqdat$D, sqdat$DOLLARS)
+plot(sqdat$PR, sqdat$DOLLARS)
+cor(sqdat$UNITS, sqdat$DOLLARS)
+cor(sqdat$D, sqdat$DOLLARS)
+cor(sqdat$PR, sqdat$DOLLARS)
+```
+
+After looking at the plots and correlation coefficients, there doesn't seem to be a lot of improvement in the correlation. Hence we do not want to use any transformation.
+
+```{r corr check multicollinearity}
+plot(dat$UNITS, dat$D)
+plot(dat$UNITS, dat$PR)
+plot(dat$PR, dat$D)
+cor(dat$UNITS, dat$D)
+cor(dat$UNITS, dat$PR)
+cor(dat$PR, dat$D)
+```
+
+
+
+Using Auto Arima to fit a model
+```{r regression p6}
+#Use the auto arima to fit the model
+fit = auto.arima(train, xreg = cbind(train_units, train_D, train_PR))
+summary(fit)
+#Use check residuals
+checkresiduals(fit)
+```
+
+As per the check residuals the model is good fit (high p-value - accept null hypothesis that the model is good fit and the data are independently distributed). The residuals look normally distributed. The model looks good.
+
+Let's forecast using this model
+```{r regression p7}
+# Forecast using the naive function
+fcast <- forecast(fit, xreg=cbind(test_units, test_D, test_PR), h=52)
+autoplot(fcast) + xlab("Year") +
+  ylab("Average Cost")
+```
+
+
+Accuracy
+```{r regression accuracy}
+accuracy(fcast, test)
+```
+
+This model is perfoming much better than just the plain sARIMA model. The train and test RMSE are very low as compared to sARIMA model. For this model, we used the actual values of Units, D and PR for the year 2012. Let's try to next predict the units, D and PR for the year 2012 as a univariate time series
+
+#### Predict the regressors  
+Let's try to get the forecast for Units, D and PR using Auto arima function  
+```{r extra}
+# We need to just use the forecast from auto arima
+fcast_unit = forecast(auto.arima(train_units), h=52)
+fcast_D = forecast(auto.arima(train_D), h=52)
+fcast_PR = forecast(auto.arima(train_PR), h=52)
+
+fcast1 <- forecast(fit, xreg=cbind(fcast_unit$mean, fcast_D$mean, fcast_PR$mean), h=52)
+autoplot(fcast1) + xlab("Year") +
+  ylab("Average Cost")
+
+accuracy(fcast1, test)
+```
+
+For this model the test RMSE has gone up by a lot, whereas the train RMSE is very low. This indicates that the model is overfitting. Let's try to see if we can make a simple model by reducing the number of regressors.  
+
+#### Reducing the regressors
+Building a regression model with just units
+```{r Extra3}
+#Use the auto arima to fit the model
+fit2 = auto.arima(train, xreg = train_units)
+summary(fit2)
+#Use check residuals
+checkresiduals(fit2)
+```
+This model has a lower AICC score than the model with all 3 regressors.
+
+
+```{r extra3 p2}
+fcast2 <- forecast(fit2, xreg=fcast_unit$mean, h=52)
+autoplot(fcast2) + xlab("Year") +
+  ylab("Average Cost")
+
+accuracy(fcast2, test)
+```
+
+Here the Test RMSE has decreased over the model that used all 3 regressors. However this is still higher than the plain sARIMA model.
+
+Next we will try to run the VAR model to check for the performance using all 3 regressors.
+
+## VAR Model
+Let's first use the VARselect to determine the optimal number of lags  
+
+```{r VAR p1}
+# using the VAR() function on the combined ts
+beer.ts <- ts.union(train, train_units, train_D, train_PR)
+
+
+# Lets use the log of dta.ts object which contains both Cost and CPI
+VAR_select = VARselect(beer.ts, type= 'both', season = 52, lag.max = 10)
+VAR_select
+```
+
+As per the SC (BIC) output above, we need to apply VAR with lag 1, i.e. VAR(1) model.
+
+```{r VAR p2}
+var1 <- VAR(beer.ts, p=1, type="both", season = 52)
+summary(var1)
+```
+
+```{r VAR forecast}
+# Using Forecast
+var_fcast = forecast(var1, h=52)
+autoplot(var_fcast)
+```
+
+```{r VAR p3}
+var_fcast$forecast$train
+
+#Accuracy
+accuracy(var_fcast$forecast$train, test)
+```
+
+The VAR Forecast error is much higher than Regression with ARMA error. Let's just use one regressor on the VAR model
+
+```{r VAR p4}
+# using the VAR() function on the combined ts
+beer.ts1 <- ts.union(train, train_units)
+
+
+# Lets use the log of dta.ts object which contains both Cost and CPI
+VAR_select1 = VARselect(beer.ts, type= 'both', season = 52, lag.max = 10)
+VAR_select1
+```
+
+As per the SC (BIC) output above, we need to apply VAR with lag 1, i.e. VAR(1) model.
+
+```{r VAR p5}
+var2 <- VAR(beer.ts1, p=1, type="both", season = 52)
+summary(var2)
+```
+
+```{r VAR forecast1}
+# Using Forecast
+var_fcast1 = forecast(var2, h=52)
+autoplot(var_fcast1)
+```
+
+```{r VAR p6}
+var_fcast1$forecast$train
+
+#Accuracy
+accuracy(var_fcast1$forecast$train, test)
+```
+
+This model is performing worse that the VAR model with all 3 regressors.  
+
+## Final Conclusion  
+The model using Regression with ARMA errors and only units as the regressor is the best performing model.
+
+<div class="tocify-extend-page" data-unique="tocify-extend-page" style="height: 0;"></div>
